@@ -1,279 +1,183 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
-import 'package:lottie/lottie.dart';
 
-import '../Questions Page/question_controller.dart';
+import '../../constants/colors.dart';
+import '../../utils/app_ad_manager.dart';
+// Import the correct LocalQuestion model
+import '../../database/local_databse_model.dart';
+import '../Widgets/favourite_question_card.dart';
 import 'favourite_screen_controller.dart';
 
-class FavouriteScreen extends StatefulWidget {
-  FavouriteScreen({super.key});
+class FavoritesScreen extends StatefulWidget {
+  const FavoritesScreen({super.key});
 
   @override
-  State<FavouriteScreen> createState() => _FavouriteScreenState();
+  State<FavoritesScreen> createState() => _FavoritesScreenState();
 }
 
-class _FavouriteScreenState extends State<FavouriteScreen> {
-  FavouriteQuestionController controller =
-      Get.put(FavouriteQuestionController());
+class _FavoritesScreenState extends State<FavoritesScreen> {
+  late final FavoritesController _controller;
+  final AppAdManager _adManager = AppAdManager();
 
-  TextEditingController decriptionController = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _controller = Get.put(FavoritesController());
+    _adManager.loadBannerAd();
+    _adManager.loadInterstitialAd();
+  }
 
-  QuestionController questionController = Get.put(QuestionController());
+  @override
+  void dispose() {
+    _adManager.dispose();
+    super.dispose();
+  }
+
+  void _copyQuestionToClipboard(int index, int questionId) {
+    final question =
+        _controller.questions.firstWhere((q) => q.id == questionId);
+
+    String textToCopy = "${index + 1}) ${question.questionTitle}\n";
+
+    for (int i = 0; i < question.options.length; i++) {
+      textToCopy +=
+          "${i + 1}. ${question.options[i]}${i == question.answer - 1 ? ' (correct)' : ''}\n";
+    }
+
+    Clipboard.setData(ClipboardData(text: textToCopy)).then((value) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Question copied to clipboard"),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
+        title: Text("Favorite Questions"),
         actions: [
+          // Reset answers button
           IconButton(
-            icon: const Icon(Icons.refresh, size: 40),
-            onPressed: () {
-              // Logic to reset the questions in favorites
-              controller.resetFavorites();
-              setState(() {});
-            },
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: () => _controller.resetFavorites(),
           ),
+
+          // Show all correct answers button
           IconButton(
-            icon: Icon(
-              Icons.visibility,
-              size: 40,
-            ),
-            onPressed: () {
-              // Logic to show all correct answers in favorites
-              controller.showAllCorrectAnswersInFavorites();
-              setState(() {});
-            },
+            icon: Icon(Icons.check_circle_outline, color: Colors.white),
+            onPressed: () => _controller.showAllCorrectAnswers(),
           ),
         ],
-        title: Text(
-          "Your Fav. Questions",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: MediaQuery.of(context).size.height * 0.025,
-          ),
-        ),
-        backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
       ),
-      body: SafeArea(
-        child: Obx(
-          () => controller.questions.isEmpty
-              ? Center(
-                  child: Text(
-                    "صفحة المفضلة خالية",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: MediaQuery.of(context).size.height * 0.025,
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: controller.questions.length,
-                  itemBuilder: (context, index) {
-                    var question = controller.questions[index];
-                    return Card(
-                      color: Colors.white,
-                      margin: const EdgeInsets.all(10),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    "${index + 1}) ${controller.questions[index].questionTitle} :",
-                                    style: TextStyle(
-                                        fontSize:
-                                            MediaQuery.of(context).size.height *
-                                                0.025,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () {
-                                    controller.deleteQuestion(
-                                        controller.questions[index].id);
-                                    Fluttertoast.showToast(
-                                        msg:
-                                            "تم حذف السؤال بنجاح من قائمة المفضلة");
-                                  },
-                                  icon: Icon(
-                                    Icons.favorite_rounded,
-                                    color: Colors.red,
-                                    size: 40,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(
-                                question.options.length,
-                                (indexOptions) {
-                                  // الحصول على حالة هذا الاختيار
-                                  bool isSelected = controller
-                                          .answersState[question.id]
-                                          ?.containsKey(indexOptions + 1) ??
-                                      false;
-                                  bool? isSelectedCorrect =
-                                      controller.answersState[question.id]
-                                          ?[indexOptions + 1];
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32.sp),
+                  topRight: Radius.circular(32.sp),
+                ),
+              ),
+              child: GetBuilder<FavoritesController>(
+                builder: (controller) {
+                  if (controller.isLoading.value) {
+                    return Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
 
-                                  return Container(
-                                    margin: const EdgeInsets.only(
-                                        top: 5, bottom: 5),
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: isSelected
-                                            ? (isSelectedCorrect!
-                                                ? Colors.green
-                                                : Colors.red)
-                                            : const Color.fromRGBO(
-                                                39, 25, 99, 1),
-                                        textStyle:
-                                            TextStyle(color: Colors.white),
-                                        // باقي الخصائص...
-                                      ),
-                                      onPressed: () {
-                                        controller.checkAnswer(
-                                            question.id, indexOptions + 1);
-                                      },
-                                      child: Text(
-                                        "${question.options[indexOptions]}",
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: MediaQuery.of(context)
-                                                  .size
-                                                  .height *
-                                              0.025,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                  if (controller.questions.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.favorite_border,
+                            size: 64.sp,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16.sp),
+                          Text(
+                            "No favorite questions yet",
+                            style: TextStyle(
+                              fontSize: 16.sp,
+                              color: Colors.grey,
                             ),
-                            //-----------
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Container(
-                                    height: 50,
-                                    width: 50,
-                                    child: IconButton(
-                                      onPressed: () {
-                                        // Logic for copying question
-                                        var question =
-                                            controller.questions[index];
-                                        var textToCopy =
-                                            "${index + 1}) ${question.questionTitle}\n";
-                                        for (int i = 0;
-                                            i < question.options.length;
-                                            i++) {
-                                          textToCopy +=
-                                              "${i + 1}. ${question.options[i]}${i == question.answer - 1 ? ' (صحيح)' : ''}\n";
-                                        }
-                                        Clipboard.setData(
-                                                ClipboardData(text: textToCopy))
-                                            .then((value) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(
-                                                    "Question Copied Successfully")),
-                                          );
-                                        });
-                                      },
-                                      icon: Lottie.asset(
-                                          "assets/images/copy.json"),
-                                    )),
-                                Container(
-                                  height: 50,
-                                  width: 50,
-                                  child: IconButton(
-                                    onPressed: () {
-                                      Get.defaultDialog(
-                                        title: "هل يوجد خطأ في هذا السؤال؟",
-                                        titleStyle: TextStyle(fontSize: 18),
-                                        content: Column(
-                                          children: <Widget>[
-                                            TextField(
-                                              controller: decriptionController,
-                                              decoration: InputDecoration(
-                                                hintText:
-                                                    "..... قم بكتابة تفاصيل الخطأ هنا",
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        actions: <Widget>[
-                                          TextButton(
-                                            child: Text('الغاء'),
-                                            onPressed: () {
-                                              Get.back(); // يغلق الـ Dialog
-                                            },
-                                          ),
-                                          TextButton(
-                                            child: Text('ارسال'),
-                                            onPressed: () {
-                                              // هنا يمكنك تنفيذ الكود للتحقق من الخطأ وإرساله
-                                              // يغلق الـ Dialog بعد الإرسال
-                                              questionController
-                                                  .sendWrongAnswer(
-                                                questionId: controller
-                                                    .questions[index].id
-                                                    .toString(),
-                                                questionTitle: controller
-                                                    .questions[index]
-                                                    .questionTitle!,
-                                                description:
-                                                    decriptionController.text
-                                                        .trim(),
-                                              );
-                                              Get.back(); // Add this if you want to close the dialog after pressing send
-                                            },
-                                          ),
-                                        ],
-                                        barrierDismissible:
-                                            false, // لا يمكن إغلاق الـ Dialog بالضغط خارجه
-                                      );
-                                    },
-                                    icon: Lottie.asset(
-                                        "assets/images/wrong.json"),
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 50.sp,
-                                  width: 50.sp,
-                                  child: IconButton(
-                                    onPressed: () {
-                                      controller.showCorrectAnswer(
-                                          controller.questions[index].id);
-                                    },
-                                    icon:
-                                        Lottie.asset("assets/images/idea.json"),
-                                  ),
-                                ),
-                              ],
-                            )
-                          ],
-                        ),
+                          ),
+                          SizedBox(height: 8.sp),
+                          Text(
+                            "Add questions to favorites from the question screens",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14.sp,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
                     );
-                  },
-                ),
-        ),
+                  }
+
+                  return ListView.builder(
+                    physics: AlwaysScrollableScrollPhysics(),
+                    itemCount: controller.questions.length,
+                    itemBuilder: (context, index) {
+                      final question = controller.questions[index];
+
+                      return FavoriteQuestionCard(
+                        question: question,
+                        index: index,
+                        answerState: controller.answersState[question.id],
+                        onOptionPressed: (questionId, optionIndex) {
+                          controller.checkAnswer(questionId, optionIndex);
+
+                          // Show ad occasionally
+                          if (index % 5 == 0) {
+                            _adManager.showInterstitial();
+                          }
+                        },
+                        onDeletePressed: () {
+                          Get.defaultDialog(
+                            title: "Remove from Favorites",
+                            middleText:
+                                "Are you sure you want to remove this question from favorites?",
+                            textConfirm: "Remove",
+                            textCancel: "Cancel",
+                            confirmTextColor: Colors.white,
+                            onConfirm: () {
+                              controller.deleteQuestion(question.id);
+                              Get.snackbar("done", "Removed from favorites",
+                                  backgroundColor: Colors.green,
+                                  colorText: Colors.white);
+
+                              Get.back();
+                            },
+                          );
+                        },
+                        onCopyPressed: () =>
+                            _copyQuestionToClipboard(index, question.id),
+                        onShowCorrectAnswerPressed: () =>
+                            controller.showCorrectAnswer(question.id),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // Banner ad at the bottom
+          _adManager.getBannerAdWidget(),
+        ],
       ),
     );
   }

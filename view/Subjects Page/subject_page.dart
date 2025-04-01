@@ -1,154 +1,125 @@
-import 'package:flutter/foundation.dart';
+import 'package:aua_questions_app/view/Subjects%20Page/subject_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import '../../Ads Helper/ads_helper.dart';
+import '../../constants/colors.dart';
+import '../../utils/app_ad_manager.dart';
 import '../Questions Page/questions_screen.dart';
-import 'subject_controller.dart';
+import '../widgets/subject_card.dart';
 
-class SubjectPage extends StatefulWidget {
-  String moduleId;
-  String moduleName;
-  SubjectPage({
-    super.key,
+class SubjectsScreen extends StatefulWidget {
+  final String moduleId;
+  final String moduleName;
+
+  const SubjectsScreen({
     required this.moduleId,
     required this.moduleName,
+    super.key,
   });
 
   @override
-  State<SubjectPage> createState() => _SubjectPageState();
+  State<SubjectsScreen> createState() => _SubjectsScreenState();
 }
 
-class _SubjectPageState extends State<SubjectPage> {
-  late SubjectController controller;
-  BannerAd? _bannerAd;
+class _SubjectsScreenState extends State<SubjectsScreen> {
+  late final SubjectsController _controller;
+  final AppAdManager _adManager = AppAdManager();
 
-  InterstitialAd? _interstitialAd;
-
-  void _loadInterstitialAd() {
-    InterstitialAd.load(
-      adUnitId: AdHelper.interstitialAdUnitId,
-      request: AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) {
-          ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {},
-          );
-
-          setState(() {
-            _interstitialAd = ad;
-          });
-        },
-        onAdFailedToLoad: (err) {
-          print('Failed to load an interstitial ad: ${err.message}');
-        },
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _controller = Get.put(SubjectsController(moduleId: widget.moduleId));
+    _adManager.loadBannerAd();
+    _adManager.loadInterstitialAd();
   }
 
   @override
   void dispose() {
-    // TODO: Dispose a BannerAd object
-    _bannerAd?.dispose();
-    _interstitialAd?.dispose();
-
+    _adManager.dispose();
     super.dispose();
-  }
-
-  Widget _buildBottomNavigationBar() {
-    // Assuming _bannerAd is a BannerAd object and properly initialized.
-    if (_bannerAd != null) {
-      return Container(
-        height: 50, // Adjust the height as needed
-        child: AdWidget(ad: _bannerAd!),
-      );
-    } else {
-      return const Text("Ads"); // This will be a very simple placeholder.
-    }
-  }
-
-  @override
-  void initState() {
-    // TODO: implement initState
-    super.initState();
-    controller = Get.put(SubjectController(moduleId: widget.moduleId));
-    BannerAd(
-      adUnitId: AdHelper.bannerAdUnitId,
-      request: AdRequest(),
-      size: AdSize.banner,
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _bannerAd = ad as BannerAd;
-          });
-        },
-        onAdFailedToLoad: (ad, err) {
-          print('Failed to load a banner ad: ${err.message}');
-          ad.dispose();
-        },
-      ),
-    ).load();
-    _loadInterstitialAd();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
-          title: Text(
-            widget.moduleName,
-            style: TextStyle(
+      backgroundColor: AppColors.primary,
+      appBar: AppBar(
+        title: Text(widget.moduleName),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
                 color: Colors.white,
-                fontSize: MediaQuery.of(context).size.height * 0.025),
-          ),
-        ),
-        body: Obx(() => controller.isLoading.value
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: controller.subject.length,
-                itemBuilder: (context, index) {
-                  return InkWell(
-                    onTap: () {
-                      Get.to(
-                        () => QuestionScreen(
-                          subjectId: controller.subject[index].id!,
-                          subjectName: controller.subject[index].subjectName!,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32.sp),
+                  topRight: Radius.circular(32.sp),
+                ),
+              ),
+              child: Obx(() {
+                if (_controller.isLoading.value) {
+                  return Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+
+                if (_controller.subjects.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.subject_outlined,
+                          size: 64.sp,
+                          color: Colors.grey,
                         ),
-                      );
-                    },
-                    child: Container(
-                      margin: EdgeInsets.all(10.sp),
-                      padding: EdgeInsets.all(10.sp),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        color: const Color.fromRGBO(39, 25, 99, 1),
-                      ),
-                      child: Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              controller.subject[index].subjectName!,
-                              style: TextStyle(
-                                  fontSize: 20.sp, color: Colors.white),
-                            ),
-                            Icon(
-                              Icons.arrow_right_alt,
-                              size: 30.sp,
-                              color: Colors.white,
-                            )
-                          ],
+                        SizedBox(height: 16.sp),
+                        Text(
+                          "No subjects available",
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            color: Colors.grey,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   );
-                })));
-    //  bottomNavigationBar: _buildBottomNavigationBar());
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () => _controller.fetchSubjects(),
+                  child: ListView.builder(
+                    physics: AlwaysScrollableScrollPhysics(),
+                    itemCount: _controller.subjects.length,
+                    itemBuilder: (context, index) {
+                      final subject = _controller.subjects[index];
+                      return SubjectCard(
+                        subject: subject,
+                        onTap: () async {
+                          // Show interstitial ad occasionally
+                          if (index % 3 == 0) {
+                            await _adManager.showInterstitial();
+                          }
+
+                          Get.to(() => QuestionsScreen(
+                                subjectId: subject.id!,
+                                subjectName: subject.subjectName!,
+                              ));
+                        },
+                      );
+                    },
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          // Banner ad at the bottom
+          _adManager.getBannerAdWidget(),
+        ],
+      ),
+    );
   }
 }

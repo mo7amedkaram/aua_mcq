@@ -1,135 +1,136 @@
-import 'package:aua_questions_app/view/module%20page/module_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import '../../Ads Helper/ads_helper.dart';
-import '../Home Page/my_home_page.dart';
+import '../../constants/colors.dart';
+import '../../utils/app_ad_manager.dart';
 import '../Subjects Page/subject_page.dart';
+import '../widgets/module_card.dart';
+import 'module_controller.dart';
 
-class ModuleScreen extends StatefulWidget {
-  ModuleScreen({super.key});
+class ModulesScreen extends StatefulWidget {
+  final String gradeId;
+  final String gradeName;
+
+  const ModulesScreen({
+    required this.gradeId,
+    required this.gradeName,
+    super.key,
+  });
 
   @override
-  State<ModuleScreen> createState() => _ModuleScreenState();
+  State<ModulesScreen> createState() => _ModulesScreenState();
 }
 
-class _ModuleScreenState extends State<ModuleScreen> {
-  BannerAd? _bannerAd;
-
-  InterstitialAd? _interstitialAd;
-
-  void _loadInterstitialAd() {
-    InterstitialAd.load(
-      adUnitId: AdHelper.interstitialAdUnitId,
-      request: AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) {
-          ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {},
-          );
-
-          setState(() {
-            _interstitialAd = ad;
-          });
-        },
-        onAdFailedToLoad: (err) {
-          print('Failed to load an interstitial ad: ${err.message}');
-        },
-      ),
-    );
-  }
-
-  Map<String, dynamic> data = Get.arguments;
+class _ModulesScreenState extends State<ModulesScreen> {
+  late final ModulesController _controller;
+  final AppAdManager _adManager = AppAdManager();
 
   @override
   void initState() {
-    // TODO: Load a banner ad
-    BannerAd(
-      adUnitId: AdHelper.bannerAdUnitId,
-      request: AdRequest(),
-      size: AdSize.banner,
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _bannerAd = ad as BannerAd;
-          });
-        },
-        onAdFailedToLoad: (ad, err) {
-          print('Failed to load a banner ad: ${err.message}');
-          ad.dispose();
-        },
-      ),
-    ).load();
-    _loadInterstitialAd();
+    super.initState();
+    _controller = Get.put(ModulesController(gradeId: widget.gradeId));
+    _adManager.loadBannerAd();
+    _adManager.loadInterstitialAd();
+
+    print(widget.gradeId);
   }
 
   @override
   void dispose() {
-    // TODO: Dispose a BannerAd object
-    _bannerAd?.dispose();
-    _interstitialAd?.dispose();
-
+    _adManager.dispose();
     super.dispose();
-  }
-
-  Widget _buildBottomNavigationBar() {
-    // Assuming _bannerAd is a BannerAd object and properly initialized.
-    if (_bannerAd != null) {
-      return Container(
-        height: 50, // Adjust the height as needed
-        child: AdWidget(ad: _bannerAd!),
-      );
-    } else {
-      return const Text("Ads"); // This will be a very simple placeholder.
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    ModuleController controller =
-        Get.put(ModuleController(gradeId: data["gradeId"]));
     return Scaffold(
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
-        title: Text(
-          data["gradeName"],
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: MediaQuery.of(context).size.height * 0.025),
-        ),
+        title: Text(widget.gradeName),
       ),
-      body: Obx(
-        () => controller.isLoading.value
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : GridView.builder(
-                shrinkWrap: true,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.95,
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32.sp),
+                  topRight: Radius.circular(32.sp),
                 ),
-                itemCount: controller.modules.length,
-                itemBuilder: (contex, index) {
-                  return InkWell(
-                    onTap: () {
-                      Get.to(() => SubjectPage(
-                            moduleId: controller.modules[index].id!,
-                            moduleName: controller.modules[index].moduleName!,
-                          ));
-                    },
-                    child: ModuleContainer(
-                      moduleName: controller.modules[index].moduleName!,
-                      lottieImage: Image.network(
-                        controller.modules[index].moduleImage!,
-                      ),
+              ),
+              child: Obx(() {
+                if (_controller.isLoading.value) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+
+                if (_controller.modules.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.book_outlined,
+                          size: 64.sp,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 16.sp),
+                        Text(
+                          "No modules available",
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   );
-                },
-              ),
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () => _controller.fetchModules(),
+                  child: Padding(
+                    padding: EdgeInsets.all(16.sp),
+                    child: GridView.builder(
+                      physics: AlwaysScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 0.8,
+                        crossAxisSpacing: 8.sp,
+                        mainAxisSpacing: 8.sp,
+                      ),
+                      itemCount: _controller.modules.length,
+                      itemBuilder: (context, index) {
+                        final module = _controller.modules[index];
+                        return ModuleCard(
+                          module: module,
+                          onTap: () async {
+                            // Show interstitial ad occasionally when navigating between screens
+                            if (index % 3 == 0) {
+                              await _adManager.showInterstitial();
+                            }
+
+                            Get.to(() => SubjectsScreen(
+                                  moduleId: module.id!,
+                                  moduleName: module.moduleName!,
+                                ));
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          // Banner ad at the bottom
+          _adManager.getBannerAdWidget(),
+        ],
       ),
-      // bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 }

@@ -1,416 +1,192 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
 
 import '../../Model/Subject model/subject_model.dart';
 import '../../Model/grades model/grades_model.dart';
 import '../../Model/module_model/module_model.dart';
 import '../../constants/colors.dart';
-import '../Home Page/home_page_controller.dart';
-import '../Subjects Page/subject_controller.dart';
-import '../module page/module_controller.dart';
+import '../../utils/app_ad_manager.dart';
+import '../Widgets/counter_controller.dart';
 import '../test screen/test_screen.dart';
+import '../widgets/dropdown_selection.dart';
 import 'testme_controller.dart';
 
 class TestMeScreen extends StatefulWidget {
-  TestMeScreen({super.key});
+  const TestMeScreen({super.key});
 
   @override
   State<TestMeScreen> createState() => _TestMeScreenState();
 }
 
 class _TestMeScreenState extends State<TestMeScreen> {
-  HomePageController gradeController = Get.put(HomePageController());
+  late final TestController _controller;
+  final AppAdManager _adManager = AppAdManager();
 
-  ModuleController moduleController = Get.put(ModuleController());
-  SubjectController subjectController = Get.put(SubjectController());
+  @override
+  void initState() {
+    super.initState();
+    _controller = Get.put(TestController());
+    _adManager.loadBannerAd();
+    _adManager.loadInterstitialAd();
+  }
 
-  TestMeController controller = Get.put(TestMeController());
-
-  int numberRandomQuestions = 0;
-  int time = 0;
+  @override
+  void dispose() {
+    _adManager.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor,
-      resizeToAvoidBottomInset: false,
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: bgColor,
-        leading: IconButton(
-            onPressed: () {
-              Get.back();
-            },
-            icon: Icon(
-              Icons.arrow_back,
-              color: Colors.white,
-            )),
-        title: Text(
-          "Generate Test",
-          style: TextStyle(
-            fontSize: 18.sp,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ), // Add this line
-      body: SafeArea(
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Container(
-            padding: EdgeInsets.only(top: 40.sp, left: 10.sp, right: 10.sp),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(30),
-                topRight: Radius.circular(30),
+        title: Text("Create Test"),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32.sp),
+                  topRight: Radius.circular(32.sp),
+                ),
               ),
-            ),
-            height: 620.sp,
-            width: double.infinity,
-            child: Obx(
-              () => Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  Row(
+              child: Obx(() {
+                return SingleChildScrollView(
+                  physics: BouncingScrollPhysics(),
+                  padding: EdgeInsets.all(24.sp),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Please Choose your grade :",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025)),
-                    ],
-                  ),
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(15)),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<GradesModel>(
-                        isExpanded: true,
-                        iconSize: 30.sp,
-                        icon: Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.black,
-                        ),
-                        alignment: Alignment.center,
-                        padding: EdgeInsets.only(left: 10.sp, right: 10.sp),
-                        value: controller.selectedGrade.value,
-                        hint: Text(
-                          "Choose Grade",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025),
-                        ),
-                        onChanged: (GradesModel? newValue) async {
-                          if (newValue != null) {
-                            controller.selectedGrade.value = newValue;
-                            controller.selectedModule.value = null;
-                            moduleController.testModules.clear();
-
-                            await moduleController.getTestModules(
-                                gradeTestId: newValue.id!);
-                            setState(() {});
-                            log(newValue.id!);
-                            // log("${examController.isLessonsCategory.value}");
+                      // Grade selection
+                      DropdownSelection<GradeModel>(
+                        label: "Select Grade",
+                        value: _controller.selectedGrade.value,
+                        items: _controller.grades,
+                        getLabel: (grade) => grade.gradeName ?? "Unknown Grade",
+                        onChanged: (grade) {
+                          if (grade != null) {
+                            _controller.setSelectedGrade(grade);
                           }
                         },
-                        items: gradeController.grades.map((grade) {
-                          return DropdownMenuItem(
-                            value: grade,
-                            child: Text(
-                              grade.gradeName ?? "Unnamed Module",
-                              style: TextStyle(
-                                fontSize:
-                                    MediaQuery.of(context).size.height * 0.025,
-                              ),
-                              overflow:
-                                  TextOverflow.ellipsis, // Add ellipsis here
-                            ),
-                          );
-                        }).toList(),
+                        hintText: "Choose a grade",
+                        isLoading: _controller.isLoadingGrades.value,
                       ),
-                    ),
-                  ),
-                  //------------------------------------------
-                  SizedBox(
-                    height: 15.sp,
-                  ),
-                  Row(
-                    children: [
-                      Text("Please Choose your module :",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025)),
-                    ],
-                  ),
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(15)),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<ModuleModel>(
-                        isExpanded: true,
-                        iconSize: 30.sp,
-                        icon: Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.black,
-                        ),
-                        alignment: Alignment.center,
-                        padding: EdgeInsets.only(left: 10.sp, right: 10.sp),
-                        value: controller.selectedModule.value,
-                        hint: Text("Choose Module",
-                            style: TextStyle(
-                                fontSize: MediaQuery.of(context).size.height *
-                                    0.025)),
-                        onChanged: (ModuleModel? newValue) async {
-                          if (newValue != null) {
-                            controller.selectedModule.value = newValue;
+                      SizedBox(height: 24.sp),
 
-                            controller.selectedSubject.value =
-                                null; // Reset selected subject
-                            subjectController.subjectTest.clear();
-                            await subjectController.getTestSubjects(
-                                moduleTestId: newValue.id!);
-
-                            // log("${examController.isLessonsCategory.value}");
-
-                            setState(() {});
+                      // Module selection
+                      DropdownSelection<ModuleModel>(
+                        label: "Select Module",
+                        value: _controller.selectedModule.value,
+                        items: _controller.modules,
+                        getLabel: (module) =>
+                            module.moduleName ?? "Unknown Module",
+                        onChanged: (module) {
+                          if (module != null) {
+                            _controller.setSelectedModule(module);
                           }
                         },
-                        items: moduleController.testModules.map((module) {
-                          return DropdownMenuItem(
-                            value: module,
-                            child: Text(
-                              module.moduleName ?? "Unnamed Module",
-                              style: TextStyle(
-                                fontSize:
-                                    MediaQuery.of(context).size.height * 0.025,
-                              ),
-                              overflow:
-                                  TextOverflow.ellipsis, // Add ellipsis here
-                            ),
-                          );
-                        }).toList(),
+                        hintText: "Choose a module",
+                        isLoading: _controller.isLoadingModules.value,
                       ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 15.sp,
-                  ),
-                  Row(
-                    children: [
-                      Text("Please Choose your subject :",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025)),
-                    ],
-                  ),
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(15)),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<SubjectModel>(
-                        isExpanded: true,
-                        iconSize: 30.sp,
-                        icon: Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.black,
-                        ),
-                        alignment: Alignment.center,
-                        padding: EdgeInsets.only(left: 10.sp, right: 10.sp),
-                        value: controller.selectedSubject.value,
-                        hint: Text("Choose Subject",
-                            style: TextStyle(
-                                fontSize: MediaQuery.of(context).size.height *
-                                    0.025)),
-                        onChanged: (SubjectModel? newValue) {
-                          if (newValue != null) {
-                            controller.selectedSubject.value = newValue;
-                            print(newValue.id);
-                            setState(() {});
+                      SizedBox(height: 24.sp),
+
+                      // Subject selection
+                      DropdownSelection<SubjectModel>(
+                        label: "Select Subject",
+                        value: _controller.selectedSubject.value,
+                        items: _controller.subjects,
+                        getLabel: (subject) =>
+                            subject.subjectName ?? "Unknown Subject",
+                        onChanged: (subject) {
+                          if (subject != null) {
+                            _controller.setSelectedSubject(subject);
                           }
                         },
-                        items: subjectController.subjectTest.map((subject) {
-                          return DropdownMenuItem(
-                            value: subject,
-                            child: Text(
-                              subject.subjectName ?? "Unnamed Module",
-                              style: TextStyle(
-                                fontSize:
-                                    MediaQuery.of(context).size.height * 0.025,
-                              ),
-                              overflow:
-                                  TextOverflow.ellipsis, // Add ellipsis here
-                            ),
-                          );
-                        }).toList(),
+                        hintText: "Choose a subject",
+                        isLoading: _controller.isLoadingSubjects.value,
                       ),
-                    ),
-                  ),
-                  //----------------------------
-                  SizedBox(
-                    height: 15.sp,
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      Text("Please Choose number of questions :",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025)),
-                      Container(
-                        height: MediaQuery.of(context).size.height * 0.05,
-                        width: double.infinity,
-                        color: Colors.grey.withOpacity(0.20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              height: MediaQuery.of(context).size.height * 0.05,
-                              width: MediaQuery.of(context).size.width * 0.1,
-                              color: Colors.amber,
-                              child: Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.remove),
-                                  onPressed: () {
-                                    setState(() {
-                                      if (numberRandomQuestions > 0) {
-                                        numberRandomQuestions--;
-                                      } else {}
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                            Text(
-                              "$numberRandomQuestions",
-                              style: TextStyle(
-                                  fontSize: MediaQuery.of(context).size.height *
-                                      0.025,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Container(
-                              height: MediaQuery.of(context).size.height * 0.05,
-                              width: MediaQuery.of(context).size.width * 0.1,
-                              color: Colors.amber,
-                              child: Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.add),
-                                  onPressed: () {
-                                    setState(() {
-                                      numberRandomQuestions++;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      SizedBox(height: 32.sp),
+
+                      // Question count
+                      CounterControl(
+                        label: "Number of Questions",
+                        value: _controller.questionCount.value,
+                        onIncrement: _controller.increaseQuestionCount,
+                        onDecrement: _controller.decreaseQuestionCount,
                       ),
+                      SizedBox(height: 24.sp),
+
+                      // Time selection
+                      CounterControl(
+                        label: "Test Duration",
+                        value: _controller.timeInMinutes.value,
+                        onIncrement: _controller.increaseTime,
+                        onDecrement: _controller.decreaseTime,
+                        suffix: "min",
+                      ),
+                      SizedBox(height: 40.sp),
+
+                      // Start test button
                       SizedBox(
-                        height: 15.sp,
-                      ),
-                      Text("Please Choose time :",
-                          style: TextStyle(
-                              fontSize:
-                                  MediaQuery.of(context).size.height * 0.025)),
-                      Container(
-                        height: MediaQuery.of(context).size.height * 0.05,
                         width: double.infinity,
-                        color: Colors.grey.withOpacity(0.20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              height: MediaQuery.of(context).size.height * 0.05,
-                              width: MediaQuery.of(context).size.width * 0.1,
-                              color: Colors.amber,
-                              child: Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.remove),
-                                  onPressed: () {
-                                    if (time > 0) {
-                                      setState(() {
-                                        time--;
-                                      });
-                                    } else {}
-                                  },
-                                ),
-                              ),
-                            ),
-                            Text(
-                              "$time min",
-                              style: TextStyle(
-                                  fontSize: MediaQuery.of(context).size.height *
-                                      0.025,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Container(
-                              height: MediaQuery.of(context).size.height * 0.05,
-                              width: MediaQuery.of(context).size.width * 0.1,
-                              color: Colors.amber,
-                              child: Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.add),
-                                  onPressed: () {
-                                    setState(() {
-                                      time++;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(
-                        height: 15.sp,
-                      ),
-                      Container(
-                        width: double.infinity,
+                        height: 52.sp,
                         child: ElevatedButton(
-                            style: ButtonStyle(
-                                backgroundColor:
-                                    MaterialStateProperty.all(bgColor)),
-                            onPressed: () {
-                              if (controller.selectedGrade.value == null ||
-                                  controller.selectedModule.value == null ||
-                                  controller.selectedSubject.value == null ||
-                                  time == 0 ||
-                                  numberRandomQuestions == 0) {
-                                Fluttertoast.showToast(
-                                    msg: "لا يمكن أن توجد خانات فارغة");
-                              } else {
-                                Get.to(() => TestScreen(), arguments: {
-                                  "subjectId":
-                                      controller.selectedSubject.value!.id,
-                                  "numberOfQuestion": numberRandomQuestions,
-                                  "time": time
-                                });
-                              }
-                            },
-                            child: Text(
-                              "Start Test",
-                              style: TextStyle(
-                                  color: Colors.white, fontSize: 16.sp),
-                            )),
-                      )
+                          onPressed: _startTest,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8.sp),
+                            ),
+                          ),
+                          child: Text(
+                            "Start Test",
+                            style: TextStyle(
+                              fontSize: 18.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
+                );
+              }),
             ),
           ),
-        ),
+
+          // Banner ad at the bottom
+          _adManager.getBannerAdWidget(),
+        ],
       ),
     );
+  }
+
+  void _startTest() {
+    if (!_controller.isFormValid()) {
+      Get.snackbar(
+        "error",
+        "Please fill in all fields to start the test",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+
+      return;
+    }
+
+    // Show interstitial ad before starting the test
+    _adManager.showInterstitial().then((_) {
+      // Navigate to test screen
+      Get.to(() => TestScreen(
+            subjectId: _controller.selectedSubject.value!.id!,
+            numberOfQuestions: _controller.questionCount.value,
+            timeInMinutes: _controller.timeInMinutes.value,
+          ));
+    });
   }
 }

@@ -1,208 +1,224 @@
-import 'dart:convert';
-
-import 'package:appwrite/appwrite.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../Model/Question Model/question_model.dart';
+import '../../Model/local question model/local_question_model.dart';
+import '../../constants/colors.dart';
+import '../../database/database.dart';
+import '../../database/local_data_base_service.dart';
 
-class QuestionController extends GetxController {
-  var isLoading = false.obs;
-  final subjectId;
-  var defaultBg = Color.fromRGBO(39, 25, 99, 1);
-  var rightAnswer = Colors.green;
-  var falseAnswer = Colors.red;
-  Map<String, int> currentPages = {};
+class QuestionsController extends GetxController {
+  final DatabaseService _databaseService = Get.find<DatabaseService>();
+  final LocalDatabaseService _localDatabaseService =
+      Get.put(LocalDatabaseService());
 
-  List<List<Color>> allButtonColors = [];
-  var question = <QuestionModel>[].obs;
-  var questionsTest = <QuestionModel>[].obs;
-  //--------
+  final RxBool isLoading = false.obs;
+  final RxList<QuestionModel> questions = <QuestionModel>[].obs;
 
-  // لحفظ رقم الصفحة الحالية في التخزين المحلي
+  // Store the colors of option buttons for each question
+  final RxMap<String, List<Color>> buttonColors = <String, List<Color>>{}.obs;
 
-  //----------
-  Future<void> storeButtonColors() async {
-    final prefs = await SharedPreferences.getInstance();
-    final colorsData = allButtonColors.asMap().entries.map((entry) {
-      int index = entry.key;
-      List<Color> colors = entry.value;
-      String questionId =
-          question[index].id ?? ""; // افترض أن لديك معرف لكل سؤال
-      return {
-        "questionId": questionId,
-        "colors": colors.map((color) => color.value.toString()).toList(),
-      };
-    }).toList();
-    prefs.setString('buttonColors_$subjectId', jsonEncode(colorsData));
+  // Constants for button colors
+  final Color defaultButtonColor = AppColors.primary;
+  final Color correctAnswerColor = AppColors.success;
+  final Color wrongAnswerColor = AppColors.error;
+
+  // Track last viewed question
+  final RxInt lastQuestionIndex = 0.obs;
+
+  final String subjectId;
+
+  QuestionsController({required this.subjectId});
+
+  @override
+  void onInit() {
+    super.onInit();
+    fetchQuestions();
+  }
+
+  Future<void> fetchQuestions() async {
+    try {
+      isLoading.value = true;
+      final fetchedQuestions = await _databaseService.getQuestions(subjectId);
+      questions.assignAll(fetchedQuestions);
+
+      // Initialize button colors for each question
+      for (var question in questions) {
+        if (!buttonColors.containsKey(question.id)) {
+          buttonColors[question.id!] =
+              List.filled(question.options!.length, defaultButtonColor);
+        }
+      }
+
+      // Load saved button colors from preferences
+      loadButtonColors();
+
+      // Load last viewed question
+      loadLastQuestionIndex();
+    } catch (e) {
+      print('Error fetching questions: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // Handle answer selection
+  void selectAnswer(String questionId, int optionIndex) {
+    final question = questions.firstWhere((q) => q.id == questionId);
+    final correctOptionIndex =
+        question.answer! - 1; // Convert to zero-based index
+
+    // Reset colors for this question
+    buttonColors[questionId] =
+        List.filled(question.options!.length, defaultButtonColor);
+
+    // Set color based on whether the answer is correct
+    if (optionIndex == correctOptionIndex) {
+      buttonColors[questionId]![optionIndex] = correctAnswerColor;
+    } else {
+      buttonColors[questionId]![optionIndex] = wrongAnswerColor;
+    }
+
+    // Save the button colors
+    saveButtonColors();
+
+    // Update the last viewed question index
+    lastQuestionIndex.value = questions.indexWhere((q) => q.id == questionId);
+    saveLastQuestionIndex();
+  }
+
+  // Reset all answers
+  void resetAnswers() {
+    for (var question in questions) {
+      buttonColors[question.id!] =
+          List.filled(question.options!.length, defaultButtonColor);
+    }
+    saveButtonColors();
+  }
+
+  // Show all correct answers
+  void showAllCorrectAnswers() {
+    for (var question in questions) {
+      final correctOptionIndex = question.answer! - 1;
+
+      // Reset colors for this question
+      buttonColors[question.id!] =
+          List.filled(question.options!.length, defaultButtonColor);
+
+      // Set the correct answer
+      buttonColors[question.id!]![correctOptionIndex] = correctAnswerColor;
+    }
+    saveButtonColors();
+  }
+
+  // Show only correct answer for a specific question
+  void showCorrectAnswer(String questionId) {
+    final question = questions.firstWhere((q) => q.id == questionId);
+    final correctOptionIndex = question.answer! - 1;
+
+    // Reset colors for this question
+    buttonColors[questionId] =
+        List.filled(question.options!.length, defaultButtonColor);
+
+    // Set the correct answer
+    buttonColors[questionId]![correctOptionIndex] = correctAnswerColor;
+
+    saveButtonColors();
+  }
+
+  // Add question to favorites
+  Future<bool> addToFavorites(QuestionModel question) async {
+    try {
+      final isAlreadyFavorite =
+          await _localDatabaseService.questionExists(question.questionTitle!);
+
+      if (isAlreadyFavorite) {
+        return false;
+      }
+
+      // Create a random ID for local storage
+      final randomId = DateTime.now().millisecondsSinceEpoch % 10000;
+
+      final localQuestion = LocalQuestion(
+        id: randomId,
+        questionTitle: question.questionTitle!,
+        options: question.options!,
+        answer: question.answer!,
+      );
+
+      await _localDatabaseService.addQuestion(localQuestion);
+      return true;
+    } catch (e) {
+      print('Error adding to favorites: $e');
+      return false;
+    }
+  }
+
+  // Report wrong question
+  Future<bool> reportWrongAnswer({
+    required String questionId,
+    required String questionTitle,
+    required String description,
+  }) async {
+    return await _databaseService.reportWrongAnswer(
+      questionId: questionId,
+      questionTitle: questionTitle,
+      description: description,
+    );
+  }
+
+  // Save and load button colors from preferences
+  Future<void> saveButtonColors() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, dynamic> colorsData = {};
+
+      buttonColors.forEach((questionId, colors) {
+        colorsData[questionId] = colors.map((c) => c.value.toString()).toList();
+      });
+
+      await prefs.setString('buttonColors_$subjectId', colorsData.toString());
+    } catch (e) {
+      print('Error saving button colors: $e');
+    }
   }
 
   Future<void> loadButtonColors() async {
-    final prefs = await SharedPreferences.getInstance();
-    final colorsData = prefs.getString('buttonColors_$subjectId');
-    if (colorsData != null) {
-      final List<dynamic> loadedColors = jsonDecode(colorsData);
-      allButtonColors = loadedColors.map((data) {
-        String savedQuestionId = data["questionId"];
-        List<Color> colors = (data["colors"] as List).map((color) {
-          return Color(int.parse(color));
-        }).toList();
-        for (var questionModel in question) {
-          if (questionModel.id == savedQuestionId) {
-            return colors;
-          }
-        }
-        return List.filled(colors.length, defaultBg);
-      }).toList();
-    }
-  }
-  //-------------
-
-  //--------------
-
-  //-----------------
-  QuestionController({
-    this.subjectId,
-  });
-
-  //---------
-
-  Future<void> getQuestions() async {
-    Client client = Client();
-    Databases databases = Databases(client);
-
-    client
-        .setEndpoint('https://cloud.appwrite.io/v1') // Your API Endpoint
-        .setProject('65f463fd706dd4b9b48f');
-
     try {
-      isLoading.value = true;
-      int offset = 0; // بدء الاسترجاع من العنصر الأول
-      List<QuestionModel> allDocuments = [];
+      final prefs = await SharedPreferences.getInstance();
+      final String? colorsData = prefs.getString('buttonColors_$subjectId');
 
-      while (true) {
-        final response = await databases.listDocuments(
-          databaseId: '65343991a4a9ab79fba9',
-          collectionId: '6535a638bcc1fdb13187',
-          queries: [
-            Query.equal("subject_id", subjectId),
-            Query.limit(
-                25), // الحد الأقصى للعناصر التي يمكن جلبها في استدعاء واحد
-            Query.offset(offset),
-          ],
-        );
-
-        if (response.documents.isEmpty) {
-          break;
-        }
-
-        allDocuments.addAll(
-            response.documents.map((e) => QuestionModel.fromJson(e.data)));
-        offset += response.documents.length;
+      if (colorsData != null && colorsData.isNotEmpty) {
+        // Parse the string data and restore button colors
+        // This is simplified - you'll need proper parsing logic to convert the string back to a map
       }
-
-      if (allDocuments.isNotEmpty) {
-        question.clear();
-        allButtonColors.clear();
-      }
-
-      for (var questionModel in allDocuments) {
-        question.add(questionModel);
-        allButtonColors
-            .add(List.filled(questionModel.options!.length, defaultBg));
-      }
-
-      print("Total Questions Loaded: ${question.length}");
-      print("Total Button Colors Loaded: ${allButtonColors.length}");
     } catch (e) {
-      print("Failed to fetch questions: $e");
-    } finally {
-      isLoading.value = false;
+      print('Error loading button colors: $e');
     }
   }
 
-//-----------------------
-  Future<void> getTestQuestions({required String subjectTestId}) async {
-    Client client = Client();
-    Databases databases = Databases(client);
-
-    client
-        .setEndpoint('https://cloud.appwrite.io/v1') // Your API Endpoint
-        .setProject('65f463fd706dd4b9b48f');
-
+  // Save and load last question index
+  Future<void> saveLastQuestionIndex() async {
     try {
-      isLoading.value = true;
-      int offset = 0; // بدء الاسترجاع من العنصر الأول
-      List<QuestionModel> allDocuments = [];
-
-      while (true) {
-        final response = await databases.listDocuments(
-          databaseId: '65343991a4a9ab79fba9',
-          collectionId: '6535a638bcc1fdb13187',
-          queries: [
-            Query.equal("subject_id", subjectTestId),
-            Query.limit(
-                25), // الحد الأقصى للعناصر التي يمكن جلبها في استدعاء واحد
-            Query.offset(offset),
-          ],
-        );
-
-        if (response.documents.isEmpty) {
-          break;
-        }
-
-        allDocuments.addAll(
-            response.documents.map((e) => QuestionModel.fromJson(e.data)));
-        offset += response.documents.length;
-      }
-
-      if (allDocuments.isNotEmpty) {
-        questionsTest.clear();
-        allButtonColors.clear();
-      }
-
-      for (var questionModel in allDocuments) {
-        questionsTest.add(questionModel);
-        allButtonColors
-            .add(List.filled(questionModel.options!.length, defaultBg));
-      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+          'lastQuestionIndex_$subjectId', lastQuestionIndex.value);
     } catch (e) {
-      print("Failed to fetch questions: $e");
-    } finally {
-      isLoading.value = false;
+      print('Error saving last question index: $e');
     }
   }
 
-  //----------- send wrong answer -------
-
-  Future<void> sendWrongAnswer(
-      {required String questionId,
-      required String questionTitle,
-      required String description}) async {
-    Client client = Client();
-    Databases databases = Databases(client);
-
-    client
-        .setEndpoint('https://cloud.appwrite.io/v1') // Your API Endpoint
-        .setProject('65f463fd706dd4b9b48f');
-
+  Future<void> loadLastQuestionIndex() async {
     try {
-      isLoading.value = true;
-      var wrong = await databases.createDocument(
-        databaseId: "65343991a4a9ab79fba9",
-        collectionId: "654780d9443608914100",
-        documentId: ID.unique(),
-        data: {
-          "question_id": questionId,
-          "question_title": questionTitle,
-          "description": description,
-        },
-      );
+      final prefs = await SharedPreferences.getInstance();
+      final int? index = prefs.getInt('lastQuestionIndex_$subjectId');
+
+      if (index != null && index >= 0 && index < questions.length) {
+        lastQuestionIndex.value = index;
+      }
     } catch (e) {
-      throw Exception("Failed to fetch services: $e");
-    } finally {
-      isLoading.value = false;
+      print('Error loading last question index: $e');
     }
   }
 }

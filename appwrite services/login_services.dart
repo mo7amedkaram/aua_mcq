@@ -1,3 +1,5 @@
+/*
+
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -95,3 +97,5 @@ class AppwriteAuth {
 
   */
 }
+
+*/

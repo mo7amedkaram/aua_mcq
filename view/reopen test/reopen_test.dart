@@ -1,301 +1,288 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
 
+import '../../Model/Question Model/question_model.dart';
 import '../../constants/colors.dart';
 import '../result screen/result_screen.dart';
 
 class ReopenTestScreen extends StatefulWidget {
-  ReopenTestScreen({super.key});
+  final List<QuestionModel> questions;
+  final int totalQuestions;
+
+  const ReopenTestScreen({
+    required this.questions,
+    required this.totalQuestions,
+    super.key,
+  });
 
   @override
   State<ReopenTestScreen> createState() => _ReopenTestScreenState();
 }
 
 class _ReopenTestScreenState extends State<ReopenTestScreen> {
-  Map<String, dynamic> data = Get.arguments;
+  late final PageController _pageController;
+  final Map<String, String> _selectedAnswers = {};
+  int _currentQuestionIndex = 0;
 
-  int currentQuestionIndex = 0;
-
-  int numberOfQuestions = 0;
-
-  PageController _pageController = PageController();
   @override
   void initState() {
     super.initState();
-    if (data["listOfQuestions"] != null) {
-      numberOfQuestions = data["listOfQuestions"].length;
-    }
-    // You might also want to ensure that _pageController is correctly initialized
-    // based on the currentQuestionIndex if you're resuming a test
-    _pageController = PageController(initialPage: currentQuestionIndex);
+    _pageController = PageController();
   }
 
-  Map selectedOption = {};
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
-  int rightAnswer = 0;
+  Future<bool> _onWillPop() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Exit Test"),
+        content:
+            Text("Are you sure you want to exit? Your progress will be lost."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text("No"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text("Yes"),
+          ),
+        ],
+      ),
+    );
 
-  int wrongAnswer = 0;
+    return result ?? false;
+  }
 
-  int chooseOption = 0;
+  void _nextQuestion() {
+    final currentQuestion = widget.questions[_currentQuestionIndex];
 
-  int correctAnswer = 0;
+    // Check if user selected an answer for current question
+    if (!_selectedAnswers.containsKey(currentQuestion.id)) {
+      Get.snackbar(
+        "Note",
+        "Please select an answer before proceeding",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
 
-  void nextQuestion() {
-    String questionId =
-        data["listOfQuestions"][currentQuestionIndex].id.toString();
-
-    // Check if the current question has been answered
-    if (!selectedOption.containsKey(questionId) ||
-        selectedOption[questionId] == null) {
-      Fluttertoast.showToast(
-          msg: "Please select an option before moving to the next question",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.CENTER,
-          timeInSecForIosWeb: 1,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-          fontSize: 16.0);
-      return; // Exit the function to prevent moving to the next question
+      return;
     }
 
-    // Proceed with checking the answer and moving to the next question
-    int selectedAnswerIndex = data["listOfQuestions"][currentQuestionIndex]
-            .options!
-            .indexOf(selectedOption[questionId]) +
-        1;
-    int correctAnswer = data["listOfQuestions"][currentQuestionIndex].answer!;
-
-    if (selectedAnswerIndex == correctAnswer) {
-      rightAnswer++;
+    if (_currentQuestionIndex < widget.questions.length - 1) {
+      setState(() {
+        _currentQuestionIndex++;
+      });
+      _pageController.nextPage(
+        duration: Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     } else {
-      wrongAnswer++;
+      _finishTest();
+    }
+  }
+
+  void _finishTest() {
+    // Calculate results
+    int correct = 0;
+    int wrong = 0;
+
+    for (var question in widget.questions) {
+      if (_selectedAnswers.containsKey(question.id)) {
+        final selectedAnswer = _selectedAnswers[question.id]!;
+        final selectedIndex = question.options!.indexOf(selectedAnswer);
+
+        if (selectedIndex + 1 == question.answer) {
+          correct++;
+        } else {
+          wrong++;
+        }
+      } else {
+        wrong++; // Count unanswered questions as wrong
+      }
     }
 
-    setState(() {
-      if (currentQuestionIndex < numberOfQuestions - 1) {
-        currentQuestionIndex++;
-        _pageController.nextPage(
-            duration: Duration(milliseconds: 300), curve: Curves.easeIn);
-      } else {
-        var percentage = (rightAnswer / numberOfQuestions) * 100;
-        Get.to(() => ResultScreen(), arguments: {
-          "correctAnswer": rightAnswer,
-          "wrongAnswer": wrongAnswer,
-          "percentage": percentage,
-          "listAnswers": selectedOption,
-          "numberOfQuestions": data["numberOfQuestions"],
-          "listOfQuestions": data["listOfQuestions"]
-        });
-      }
-    });
+    // Navigate to results screen
+    Get.off(() => ResultScreen(
+          correctAnswers: correct,
+          wrongAnswers: wrong,
+          totalQuestions: widget.totalQuestions,
+          questions: widget.questions,
+          selectedAnswers: _selectedAnswers,
+        ));
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        final shouldPop = await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Exit the test"),
-            content:
-                const Text('Do you want to confirm your exit from the test?'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('NO'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('YES'),
-              ),
-            ],
-          ),
-        );
-
-        // Return true if the user decides to pop and false otherwise
-        return shouldPop ?? false;
-      },
+      onWillPop: _onWillPop,
       child: Scaffold(
-        backgroundColor: bgColor,
-        resizeToAvoidBottomInset: false,
+        backgroundColor: AppColors.primary,
         appBar: AppBar(
-          leading: IconButton(
-              onPressed: () async {
-                final shouldPop = await showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text("الخروج من الإختبار"),
-                    content: const Text('هل تريد تأكيد الخروج من الإختبار؟'),
-                    actions: <Widget>[
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('لا'),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(true);
-                          Navigator.of(context).pop(true);
-                        },
-                        child: const Text('نعم'),
-                      ),
-                    ],
-                  ),
-                );
-
-                // Return true if the user decides to pop and false otherwise
-                return shouldPop ?? false;
-              },
-              icon: Icon(Icons.arrow_back)),
-          backgroundColor: bgColor,
-          title: Text(
-            "Your Test",
-            style: TextStyle(
-              fontSize: 18.sp,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ), // Add this line
-        body: SafeArea(
-          child: Stack(
-            children: [
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  padding:
-                      EdgeInsets.only(top: 40.sp, left: 10.sp, right: 10.sp),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(30),
-                      topRight: Radius.circular(30),
-                    ),
-                  ),
-                  width: double.infinity,
-                  child: SingleChildScrollView(
-                    child: SizedBox(
-                      height: 620.sp,
-                      child: PageView.builder(
-                        controller: _pageController,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: data["listOfQuestions"].length,
-                        itemBuilder: (context, index) {
-                          var question = data["listOfQuestions"][index];
-                          return SingleChildScrollView(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: EdgeInsets.all(10.sp),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(15),
-                                    border: Border.all(color: Colors.grey),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        question.questionTitle!,
-                                        style: TextStyle(fontSize: 18.sp),
-                                      ),
-                                      SizedBox(height: 10.sp),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 10.sp,
-                                ),
-                                // Inside the PageView.builder itemBuilder
-                                ...List.generate(
-                                  question.options!.length,
-                                  (optionIndex) {
-                                    String optionValue =
-                                        question.options![optionIndex];
-                                    // Use 'question.id.toString()' or a similar unique identifier for your question
-                                    String questionId = question.id.toString();
-
-                                    return Container(
-                                      color: Colors.white,
-                                      width: double.infinity,
-                                      child: RadioListTile<String>(
-                                        title: Text(
-                                          optionValue,
-                                          style: TextStyle(fontSize: 17.sp),
-                                        ),
-                                        value: optionValue,
-                                        groupValue: selectedOption[
-                                            questionId], // Use the correct reference for groupValue
-                                        onChanged: (String? value) {
-                                          setState(() {
-                                            selectedOption[questionId] = value;
-                                          });
-                                        },
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+          title: Text("Retake Test"),
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(32.sp),
+                    topRight: Radius.circular(32.sp),
                   ),
                 ),
-              ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  height: 40.sp,
-                  width: double.infinity,
-                  color: Color.fromARGB(255, 221, 219, 219),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      InkWell(
-                        onTap: nextQuestion,
-                        child: Container(
-                          width: 70.sp,
-                          height: double.infinity,
-                          decoration: BoxDecoration(
-                              borderRadius: BorderRadius.only(
-                                  topRight: Radius.circular(20.sp),
-                                  bottomRight: Radius.circular(20.sp)),
-                              color: bgColor),
-                          child: Center(
-                              child: Text(
-                            "NEXT",
-                            style:
-                                TextStyle(fontSize: 22.sp, color: Colors.white),
-                          )),
-                        ),
+                child: PageView.builder(
+                  controller: _pageController,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemCount: widget.questions.length,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentQuestionIndex = index;
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    final question = widget.questions[index];
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(24.sp),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Question text
+                          Container(
+                            padding: EdgeInsets.all(16.sp),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8.sp),
+                            ),
+                            child: Text(
+                              question.questionTitle!,
+                              style: TextStyle(
+                                fontSize: 18.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 24.sp),
+
+                          // Options
+                          ...List.generate(
+                            question.options!.length,
+                            (optionIndex) {
+                              final option = question.options![optionIndex];
+                              final isSelected =
+                                  _selectedAnswers[question.id] == option;
+
+                              return Container(
+                                margin: EdgeInsets.only(bottom: 12.sp),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : Colors.grey.shade300,
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8.sp),
+                                ),
+                                child: RadioListTile<String>(
+                                  title: Text(
+                                    option,
+                                    style: TextStyle(
+                                      fontSize: 16.sp,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  value: option,
+                                  groupValue: _selectedAnswers[question.id],
+                                  activeColor: AppColors.primary,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() {
+                                        _selectedAnswers[question.id!] = value;
+                                      });
+                                    }
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                      Container(
-                        width: 70.sp,
-                        height: double.infinity,
-                        decoration: BoxDecoration(
-                            borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(20.sp),
-                                bottomLeft: Radius.circular(20.sp)),
-                            color: Colors.green),
-                        child: Center(
-                          child: Text(
-                            "${(currentQuestionIndex + 1)} / $numberOfQuestions",
-                            style:
-                                TextStyle(fontSize: 22.sp, color: Colors.white),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Navigation bar at the bottom
+            Container(
+              height: 60.sp,
+              color: Colors.grey.shade200,
+              child: Row(
+                children: [
+                  // Progress indicator
+                  Container(
+                    width: 100.sp,
+                    height: 60.sp,
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      borderRadius: BorderRadius.only(
+                        topRight: Radius.circular(30.sp),
+                        bottomRight: Radius.circular(30.sp),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      "${_currentQuestionIndex + 1}/${widget.questions.length}",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.sp,
+                      ),
+                    ),
+                  ),
+
+                  Spacer(),
+
+                  // Next/Finish button
+                  Container(
+                    width: 100.sp,
+                    height: 60.sp,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(30.sp),
+                        bottomLeft: Radius.circular(30.sp),
+                      ),
+                    ),
+                    child: InkWell(
+                      onTap: _nextQuestion,
+                      child: Center(
+                        child: Text(
+                          _currentQuestionIndex < widget.questions.length - 1
+                              ? "Next"
+                              : "Finish",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16.sp,
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

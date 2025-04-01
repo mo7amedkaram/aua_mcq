@@ -5,15 +5,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 class CheckUpdates extends StatelessWidget {
   CheckUpdates({super.key});
-  final urlGooglePlay = Uri.parse(
+
+  final Uri _googlePlayUrl = Uri.parse(
       "https://play.google.com/store/apps/details?id=com.medicineway.aua_questions");
 
-  Future<void> _launchUrl({required Uri url}) async {
+  Future<void> _launchUrl() async {
     if (!await launchUrl(
-      url,
+      _googlePlayUrl,
       mode: LaunchMode.externalApplication,
     )) {
-      throw Exception('Could not launch $url');
+      throw Exception('Could not launch $_googlePlayUrl');
     }
   }
 
@@ -22,49 +23,57 @@ class CheckUpdates extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-          child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              "تحديث التطبيق",
-              style: TextStyle(
-                fontSize: 20.sp,
-                fontWeight: FontWeight.bold,
-                fontFamily: "Tajawal",
+        child: Padding(
+          padding: EdgeInsets.all(24.sp),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                "Update Required",
+                style: TextStyle(
+                  fontSize: 24.sp,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
               ),
-            ),
-            Text(
-              "برجاء تحديث التطبيق حتى تتمكن من مواصلة استخدامه",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 17.sp,
-                fontFamily: "Tajawal",
-                color: Colors.grey,
+              SizedBox(height: 16.sp),
+              Text(
+                "Please update the app to continue using all features.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  color: Colors.grey.shade700,
+                ),
               ),
-            ),
-            Container(
-              height: 250.sp,
-              width: 250.sp,
-              child: LottieBuilder.asset(
-                  "assets/images/Animation - 1705106352526.json"),
-            ),
-            SizedBox(
-              height: 15.sp,
-            ),
-            ElevatedButton.icon(
-              onPressed: () {
-                _launchUrl(url: urlGooglePlay);
-              },
-              icon: const Icon(
-                Icons.play_arrow_sharp,
-                color: Colors.green,
+              SizedBox(height: 32.sp),
+              LottieBuilder.asset(
+                "assets/animations/update_animation.json",
+                height: 200.sp,
+                width: 200.sp,
+                fit: BoxFit.contain,
               ),
-              label: const Text("اضغط لتحديث التطبيق من المتجر"),
-            ),
-          ],
+              SizedBox(height: 32.sp),
+              ElevatedButton.icon(
+                onPressed: _launchUrl,
+                icon: const Icon(
+                  Icons.play_arrow_sharp,
+                  color: Colors.green,
+                ),
+                label: const Text(
+                  "Update from Google Play",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 24.sp, vertical: 12.sp),
+                ),
+              ),
+            ],
+          ),
         ),
-      )),
+      ),
     );
   }
 }

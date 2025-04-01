@@ -1,501 +1,205 @@
-// ignore_for_file: public_member_api_docs, sort_constructors_first
-import 'dart:math';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
-import 'package:lottie/lottie.dart';
 
-import 'package:shared_preferences/shared_preferences.dart';
-
-import '../Favourite Screen/favourite_screen_controller.dart';
+import '../../constants/colors.dart';
+import '../../utils/app_ad_manager.dart';
+import '../widgets/question_card.dart';
 import 'question_controller.dart';
 
-class QuestionScreen extends StatefulWidget {
-  String subjectName;
-  String subjectId;
-  QuestionScreen({
-    Key? key,
-    required this.subjectName,
+class QuestionsScreen extends StatefulWidget {
+  final String subjectId;
+  final String subjectName;
+
+  const QuestionsScreen({
     required this.subjectId,
-  }) : super(key: key);
+    required this.subjectName,
+    super.key,
+  });
 
   @override
-  State<QuestionScreen> createState() => _QuestionScreenState();
+  State<QuestionsScreen> createState() => _QuestionsScreenState();
 }
 
-class _QuestionScreenState extends State<QuestionScreen> {
-  late QuestionController controller;
-  TextEditingController decriptionController = TextEditingController();
-  FavouriteQuestionController favController =
-      Get.put(FavouriteQuestionController());
-  int lastQuestionIndex =
-      0; // default to the first question if no index was saved
+class _QuestionsScreenState extends State<QuestionsScreen> {
+  late final QuestionsController _controller;
+  final AppAdManager _adManager = AppAdManager();
+  final ScrollController _scrollController = ScrollController();
+  bool _initialScrollDone = false;
 
   @override
   void initState() {
     super.initState();
-    // TODO make sure to comment out this line before release
+    _controller = Get.put(QuestionsController(subjectId: widget.subjectId));
+    _adManager.loadBannerAd();
+    _adManager.loadInterstitialAd();
 
-    getLastQuestionAnswered(widget.subjectId);
-    controller = Get.put(QuestionController(subjectId: widget.subjectId));
-
-    _loadCurrentPage();
-    controller.getQuestions().then((_) async {
-      await controller.loadButtonColors();
-      if (controller.allButtonColors.isEmpty ||
-          controller.allButtonColors.length != controller.question.length) {
-        controller.allButtonColors = controller.question.map((question) {
-          return List.filled(question.options!.length, controller.defaultBg);
-        }).toList();
-      }
-      setState(() {});
+    // Handle scrolling to the last viewed question
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToLastQuestion();
     });
-    int lastQuestionIndex = 5;
-    if (lastQuestionIndex >= 0 &&
-        lastQuestionIndex < controller.question.length) {
-      Future.delayed(Duration.zero, () {
-        scrollController.jumpTo(lastQuestionIndex * 300);
-      });
+  }
+
+  void _scrollToLastQuestion() {
+    if (!_initialScrollDone && _controller.questions.isNotEmpty) {
+      final index = _controller.lastQuestionIndex.value;
+      if (index >= 0 && index < _controller.questions.length) {
+        // Estimate the height of each question card
+        final estimatedHeight = 400.sp;
+        _scrollController.animateTo(
+          index * estimatedHeight,
+          duration: Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+        _initialScrollDone = true;
+      }
     }
   }
 
   @override
-  void didUpdateWidget(covariant QuestionScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.subjectId != oldWidget.subjectId) {
-      controller = Get.put(QuestionController(subjectId: widget.subjectId));
-      _loadCurrentPage();
-      controller.getQuestions().then((_) async {
-        await controller.loadButtonColors();
-        // التحقق من الألوان وتحديثها إذا لزم الأمر
-        if (controller.allButtonColors.isEmpty ||
-            controller.allButtonColors.length != controller.question.length) {
-          controller.allButtonColors = controller.question.map((question) {
-            return List.filled(question.options!.length, controller.defaultBg);
-          }).toList();
-        }
-        if (mounted) setState(() {});
-      });
-    }
+  void dispose() {
+    _adManager.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadCurrentPage() async {
-    final prefs = await SharedPreferences.getInstance();
-    int currentPage = prefs.getInt('currentPage_${widget.subjectId}') ?? 0;
-    controller.currentPages[widget.subjectId] = currentPage;
-  }
-
-  Future<void> _saveCurrentPage() async {
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setInt('currentPage_${widget.subjectId}',
-        controller.currentPages[widget.subjectId] ?? 0);
-  }
-
-  void resetQuestions() {
-    for (var buttonColors in controller.allButtonColors) {
-      for (int i = 0; i < buttonColors.length; i++) {
-        buttonColors[i] = controller.defaultBg;
-      }
-    }
-    setState(() {});
-    controller.storeButtonColors();
-  }
-
-  void showAllCorrectAnswers() {
-    for (int questionIndex = 0;
-        questionIndex < controller.question.length;
-        questionIndex++) {
-      var question = controller.question[questionIndex];
-      var correctAnswerIndex = question.answer! - 1; // تصحيح المؤشر
-
-      var buttonColors = controller.allButtonColors[questionIndex];
-      for (int optionIndex = 0;
-          optionIndex < buttonColors.length;
-          optionIndex++) {
-        if (optionIndex == correctAnswerIndex) {
-          buttonColors[optionIndex] = controller.rightAnswer;
-        } else {
-          buttonColors[optionIndex] = controller.defaultBg;
-        }
-      }
-    }
-
-    setState(() {});
-    controller.storeButtonColors();
-  }
-
-  double estimatedHeightOfEachQuestion = 400.0;
-  Future<void> getLastQuestionAnswered(String subjectId) async {
-    final prefs = await SharedPreferences.getInstance();
-    lastQuestionIndex = prefs.getInt('lastQuestionIndex_$subjectId') ?? 0;
-    // Now, you can use lastQuestionIndex to scroll to the last question for this subject.
-    // You may need to call setState if necessary to refresh the UI with the new index.
-  }
-
-  bool initialScrollDone = false;
-  ScrollController scrollController = ScrollController();
-
-  Future<void> saveLastQuestionAnswered(
-      {required String subjectId, required int questionIndex}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lastQuestionIndex_$subjectId', questionIndex);
+  void _showResetConfirmation() {
+    Get.defaultDialog(
+      title: "Reset Answers",
+      middleText: "Are you sure you want to reset all answers?",
+      textConfirm: "Reset",
+      textCancel: "Cancel",
+      confirmTextColor: Colors.white,
+      onConfirm: () {
+        _controller.resetAnswers();
+        Get.back();
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Only perform the initial scroll once.
-    if (!initialScrollDone) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (scrollController.hasClients &&
-            controller.question.isNotEmpty &&
-            lastQuestionIndex < controller.question.length) {
-          double offset = lastQuestionIndex * estimatedHeightOfEachQuestion;
-          scrollController.animateTo(
-            offset,
-            duration: Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-          initialScrollDone = true; // Set the flag to true after scrolling.
-        }
-      });
-    }
     return Scaffold(
-      backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color.fromRGBO(39, 25, 99, 1),
-        title: Text(
-          widget.subjectName,
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: MediaQuery.of(context).size.height * 0.025),
-        ),
+        title: Text(widget.subjectName),
         actions: [
+          // Reset button
           IconButton(
-              onPressed: resetQuestions,
-              icon: Lottie.asset("assets/images/reset.json")),
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: _showResetConfirmation,
+          ),
+
+          // Show all correct answers button
           IconButton(
-              onPressed: showAllCorrectAnswers,
-              icon: Lottie.asset("assets/images/select_all.json")),
+            icon: Icon(Icons.check_circle_outline, color: Colors.white),
+            onPressed: () => _controller.showAllCorrectAnswers(),
+          ),
+
+          // Question counter badge
           Container(
-            width: 80,
-            height: 40,
+            margin: EdgeInsets.only(right: 16.sp),
+            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 4.sp),
             decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(15), color: Colors.white),
-            child: Center(
-                child: Text(
-              "${controller.question.length}",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-            )),
-          )
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16.sp),
+            ),
+            child: Obx(() => Text(
+                  "${_controller.questions.length}",
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16.sp,
+                  ),
+                )),
+          ),
         ],
       ),
-      body: Obx(
-        () => controller.isLoading.value
-            ? const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              )
-            : Column(
-                children: [
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      shrinkWrap: true,
-                      itemCount: controller.question.length,
-                      itemBuilder: (context, index) {
-                        if (controller.allButtonColors.length <= index) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
-
-                        var buttonColors = controller.allButtonColors[index];
-
-                        return Card(
-                          margin: const EdgeInsets.all(10),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        "${index + 1}) ${controller.question[index].questionTitle} :",
-                                        style: TextStyle(
-                                            fontSize: MediaQuery.of(context)
-                                                    .size
-                                                    .height *
-                                                0.025,
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: () {
-                                        int randomId = Random().nextInt(1000);
-                                        favController.addQuestion(
-                                          controller
-                                              .question[index].questionTitle!,
-                                          controller.question[index].options!,
-                                          controller.question[index].answer!,
-                                          randomId,
-                                        );
-                                        Fluttertoast.showToast(
-                                            msg:
-                                                "تم حفظ السؤال في المفضلة بنجاح");
-                                      },
-                                      icon: Icon(
-                                        Icons.favorite_border_outlined,
-                                        size: 40,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: List.generate(
-                                    controller.question[index].options!.length,
-                                    (indexOptions) {
-                                      if (indexOptions >=
-                                          controller.question[index].options!
-                                              .length) {
-                                        return Container();
-                                      }
-
-                                      return Container(
-                                        margin: const EdgeInsets.only(
-                                            top: 5, bottom: 5),
-                                        width: double.infinity,
-                                        child: ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            padding: EdgeInsets.all(10),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            textStyle: TextStyle(fontSize: 18),
-                                            alignment: Alignment.center,
-                                            backgroundColor:
-                                                buttonColors.length >
-                                                        indexOptions
-                                                    ? buttonColors[indexOptions]
-                                                    : controller.defaultBg,
-                                          ),
-                                          onPressed: () {
-                                            onAnswerSelected(
-                                                index, indexOptions);
-                                          },
-                                          child: Text(
-                                            "${controller.question[index].options![indexOptions]}",
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: MediaQuery.of(context)
-                                                        .size
-                                                        .height *
-                                                    0.025),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Container(
-                                        height: 50,
-                                        width: 50,
-                                        child: IconButton(
-                                          onPressed: () {
-                                            var question =
-                                                controller.question[index];
-                                            var textToCopy =
-                                                "${index + 1}) ${question.questionTitle}\n";
-                                            for (int i = 0;
-                                                i < question.options!.length;
-                                                i++) {
-                                              textToCopy +=
-                                                  "${i + 1}. ${question.options![i]}${i == question.answer! - 1 ? ' (صحيح)' : ''}\n";
-                                            }
-                                            Clipboard.setData(ClipboardData(
-                                                    text: textToCopy))
-                                                .then((value) {
-                                              final snackBar = SnackBar(
-                                                  content: Text(
-                                                      "Question Copied Successfully"));
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(snackBar);
-                                            });
-                                          },
-                                          icon: Lottie.asset(
-                                              "assets/images/copy.json"),
-                                        )),
-                                    Container(
-                                      height: 50,
-                                      width: 50,
-                                      child: IconButton(
-                                        onPressed: () {
-                                          Get.defaultDialog(
-                                            title: "هل يوجد خطأ في هذا السؤال؟",
-                                            titleStyle: TextStyle(fontSize: 18),
-                                            content: Column(
-                                              children: <Widget>[
-                                                TextField(
-                                                  controller:
-                                                      decriptionController,
-                                                  decoration: InputDecoration(
-                                                    hintText:
-                                                        "..... قم بكتابة تفاصيل الخطأ هنا",
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                child: Text('الغاء'),
-                                                onPressed: () {
-                                                  Get.back(); // يغلق الـ Dialog
-                                                },
-                                              ),
-                                              TextButton(
-                                                child: Text('ارسال'),
-                                                onPressed: () {
-                                                  // هنا يمكنك تنفيذ الكود للتحقق من الخطأ وإرساله
-                                                  // يغلق الـ Dialog بعد الإرسال
-                                                  controller.sendWrongAnswer(
-                                                    questionId: controller
-                                                        .question[index].id!,
-                                                    questionTitle: controller
-                                                        .question[index]
-                                                        .questionTitle!,
-                                                    description:
-                                                        decriptionController
-                                                            .text
-                                                            .trim(),
-                                                  );
-                                                  Get.back(); // Add this if you want to close the dialog after pressing send
-                                                },
-                                              ),
-                                            ],
-                                            barrierDismissible:
-                                                false, // لا يمكن إغلاق الـ Dialog بالضغط خارجه
-                                          );
-                                        },
-                                        icon: Lottie.asset(
-                                            "assets/images/wrong.json"),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      height: 50.sp,
-                                      width: 50.sp,
-                                      child: IconButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            var question =
-                                                controller.question[index];
-                                            var correctAnswerIndex =
-                                                question.answer! -
-                                                    1; // تصحيح المؤشر
-                                            for (int i = 0;
-                                                i < question.options!.length;
-                                                i++) {
-                                              if (i == correctAnswerIndex) {
-                                                buttonColors[i] =
-                                                    controller.rightAnswer;
-                                              } else {
-                                                if (buttonColors[i] !=
-                                                    controller.rightAnswer) {
-                                                  buttonColors[i] =
-                                                      controller.defaultBg;
-                                                }
-                                              }
-                                            }
-                                          });
-                                          controller.storeButtonColors();
-                                        },
-                                        icon: Lottie.asset(
-                                            "assets/images/idea.json"),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32.sp),
+                  topRight: Radius.circular(32.sp),
+                ),
               ),
-      ),
-      // bottomNavigationBar: _buildBottomNavigationBar(),
-    );
-  }
+              child: Obx(() {
+                if (_controller.isLoading.value) {
+                  return Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
 
-/*
-  Widget _buildBottomNavigationBar() {
-    // Assuming _bannerAd is a BannerAd object and properly initialized.
-    return bannerAd != null ? StartAppBanner(bannerAd!) : Container();
-  }
-*/
-  void onAnswerSelected(int questionIndex, int selectedOptionIndex) {
-    final buttonColors = controller.allButtonColors[questionIndex];
-    final isCorrect =
-        controller.question[questionIndex].answer == (selectedOptionIndex + 1);
-
-    for (int i = 0; i < buttonColors.length; i++) {
-      buttonColors[i] = controller.defaultBg;
-    }
-    buttonColors[selectedOptionIndex] =
-        isCorrect ? controller.rightAnswer : controller.falseAnswer;
-
-    setState(() {});
-    saveLastQuestionAnswered(
-        questionIndex: questionIndex,
-        subjectId: widget.subjectId); // Call this when the answer is selected
-    controller.storeButtonColors();
-  }
-}
-
-/*
-
-
-Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(currentQuestion["question_title"],
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 16),
-                          Column(
-                            children: List.generate(
-                              currentQuestion["options"].length,
-                              (optionIndex) => RadioListTile(
-                                  title: Text(
-                                      currentQuestion["options"][optionIndex]),
-                                  value: optionIndex,
-                                  groupValue:
-                                      controller.selectedAnswerIndices[index],
-                                  onChanged: (value) {
-                                    print("$value");
-                                  }),
-                            ),
+                if (_controller.questions.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.question_mark,
+                          size: 64.sp,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 16.sp),
+                        Text(
+                          "No questions available",
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            color: Colors.grey,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   );
-*/
+                }
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  physics: AlwaysScrollableScrollPhysics(),
+                  itemCount: _controller.questions.length,
+                  itemBuilder: (context, index) {
+                    final question = _controller.questions[index];
+
+                    return QuestionCard(
+                      question: question,
+                      index: index,
+                      buttonColors: _controller.buttonColors[question.id!] ??
+                          List.filled(question.options!.length,
+                              _controller.defaultButtonColor),
+                      onAnswerSelected: (questionId, optionIndex) {
+                        _controller.selectAnswer(questionId, optionIndex);
+
+                        // Show an ad after answering questions occasionally
+                        if (index % 10 == 9) {
+                          // Every 10th question
+                          _adManager.showInterstitial();
+                        }
+                      },
+                      onFavoritePressed: () {
+                        _controller.addToFavorites(question).then((success) {
+                          if (success) {
+                            Get.snackbar("done", "Added to favorites");
+                          } else {
+                            Get.snackbar("error", "Already in favorites");
+                          }
+                        });
+                      },
+                      onShowCorrectAnswerPressed: () =>
+                          _controller.showCorrectAnswer(question.id!),
+                    );
+                  },
+                );
+              }),
+            ),
+          ),
+
+          // Banner ad at the bottom
+          _adManager.getBannerAdWidget(),
+        ],
+      ),
+    );
+  }
+}
